@@ -19,7 +19,7 @@ buffer                  db 128;输入缓冲
                         db ?
                         db 128 dup(?)
 buffer_length           db ?,?;保存缓冲区实际长度,共两个字节
-normal_score            db ?,?;保存平时成绩
+normal_score            db ?,?;保存平时成绩(未平均)
 bigwork_score           db ?,?;保存大作业成绩
 normal_score_integer    db ?,?;保存40%平时成绩的整数部分
 normal_score_decimal    db ?,?;保存40%平时成绩的小数部分
@@ -54,13 +54,9 @@ main_loop:
     call input_choice_error
     jmp main_loop
 Input:
-    call get_str_input
-    call convert_str_to_int
-    call calculate_normal_score
-    call calculate_bigwork_score
-    call calculate_final_score
-    call get_buffer_length
-    call write_file_func
+    call get_score_input
+    call get_final_score
+    call save_score_in_file
     jmp main_loop
 finish:
     call close_file_func
@@ -93,7 +89,7 @@ input_choice:;获取选项
     int 21h
     ret
 
-get_str_input:;获取成绩输入
+get_score_input:;获取成绩输入
     xor ax,ax
     mov ah,9
     lea dx,input_hint
@@ -106,11 +102,27 @@ get_str_input:;获取成绩输入
     ret
 
 
+get_final_score:
+    call convert_input_score_to_int;将输入的成绩进行转换
+    call calculate_normal_score;计算40%的平时成绩
+    call calculate_bigwork_score;计算60%的大作业成绩
+    call calculate_final_score;计算总成绩
+    ret
 
+save_score_in_file:
+    call get_buffer_length_to_cr
+    call convert_int_to_char
+    call get_buffer_length_to_cr
+    lea si,buffer_length
+    mov bx,[si]
+    inc bx
+    mov [si],bx
+    call write_file_func
+    ret
 
 
 ;数据处理
-convert_str_to_int:;将输入的成绩转换为数值
+convert_input_score_to_int:;将输入的成绩转换为数值
     push ax
     push bx
     push cx
@@ -120,41 +132,38 @@ convert_str_to_int:;将输入的成绩转换为数值
     mov cx,16
     xor dx,dx
     mov si,offset buffer+13
-convert_str_to_int_loop1:
+get_number_posi:
     mov bl,byte ptr ds:[si]
-    cmp bl,' '
-    je convert_str_to_int_loop1_finish
     inc si
-    jmp convert_str_to_int_loop1
-convert_str_to_int_loop1_finish:
-    inc si;此时si指向了第一个成绩
-convert_str_to_int_loop2:
-    mov ah,10
+    cmp bl,' '
+    je convert_number
+    jmp get_number_posi
+convert_number:
     mov bl,byte ptr ds:[si]
     cmp bl,' '
-    je add_normal_score
+    je add_all_normal_score
     cmp bl,13
-    je convert_str_to_int_loop2_finish
-    and bl,0b00001111;'0'->0
+    je save_bigwork_score
+    and bl,00001111b;'0'->0
+    mov ah,10
     mul ah;ax=al*10
-    add al,bl
+    add al,bl;15=1*10+5
     inc si
-    jmp convert_str_to_int_loop2
-add_normal_score:
+    jmp convert_number
+add_all_normal_score:
     add dx,ax
     inc si
     xor ax,ax
     dec cx
-    jcxz add_normal_score_finish
-    jmp convert_str_to_int_loop2
-add_normal_score_finish:
+    jcxz save_normal_score
+    jmp convert_number
+save_normal_score:
     push si
     lea si,normal_score
     mov [si],dx;保存平时成绩
     pop si
-    jmp convert_str_to_int_loop2
-convert_str_to_int_loop2_finish:
-    xor ah,ah
+    jmp convert_number
+save_bigwork_score:
     lea si,bigwork_score
     mov [si],ax;保存大作业成绩
     
@@ -165,22 +174,27 @@ convert_str_to_int_loop2_finish:
     ret
 
 
-calculate_normal_score:;40%的平时成绩
+calculate_normal_score:;40%的平时成绩 x/16*0.4=x/40
     push ax
     push bx
     push dx
-
+;计算整数
     xor dx,dx
-    mov bx,4
     lea si,normal_score
     mov ax,[si]
-    mul bx;ax=ax*4
-    mov bx,10
-    div bx;ax=ax/10(商)   dx=ax%10(余数)
+    mov bx,40
+    div bx;ax=ax/40(商)   dx=ax%40(余数)
     lea si,normal_score_integer
     mov [si],ax;保存整数部分
+;计算小数
+    mov ax,dx
+    xor dx,dx
+    mov bx,10
+    mul bx;ax=dx*10
+    mov bx,40
+    div bx;ax=ax/40(商)   dx=ax%40(余数)
     lea si,normal_score_decimal
-    mov [si],dx;保存小数部分,除10的余数直接就是小数
+    mov [si],ax;保存小数部分
 
     pop dx
     pop bx
@@ -197,7 +211,7 @@ calculate_bigwork_score:;60%的大作业成绩
     mov bx,6
     lea si,bigwork_score
     mov ax,[si]
-    mul bx;ax=ax*4
+    mul bx;ax=ax*6
     mov bx,10
     div bx;ax=ax/10(商)   dx=ax%10(余数)
     lea si,bigwork_score_integer
@@ -211,7 +225,7 @@ calculate_bigwork_score:;60%的大作业成绩
     ret
 
 
-calculate_bigwork_score:
+calculate_final_score:
     push ax
     push bx
     push cx
@@ -241,6 +255,59 @@ calculate_bigwork_score:
     pop bx
     pop ax
     ret
+
+
+convert_int_to_char:
+    lea si,buffer_length
+    mov di,[si]
+    mov si,offset buffer+1
+    add si,di
+    mov byte ptr ds:[si],' ';将回车替换成空格
+    inc si
+    lea di,final_score_integer;将整数部分转换成字符
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.';小数点
+    inc si
+    lea di,final_score_decimal;将小数部分转换成字符
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],13;CR
+    inc si
+    mov byte ptr ds:[si],10;LF
+    ret
+
+
+dtoc:
+    push bp
+    mov bp,sp
+    mov si,ss:[bp+4]
+    mov ax,ss:[bp+6]
+    mov dx,0
+    push dx
+    mov bx,10
+dtoc_loop:
+    div bx;ax:商,dx:余数
+    add dx,030h;0->'0'
+    push dx;ascii入栈
+    mov cx,ax
+    jcxz dtoc_re
+    mov dx,0
+    jmp dtoc_loop
+dtoc_re:;用栈将ascii倒序
+    pop cx
+    jcxz dtoc_ret
+    mov byte ptr ds:[si],cl;移动到buffer中
+    inc si
+    jmp dtoc_re
+dtoc_ret:
+    mov sp,bp
+    pop bp
+    ret 4
 
 
 ;文件操作
@@ -300,22 +367,20 @@ set_file_position_func:;将文件指针移动到末尾,即追加模式
     int 21h
     ret
 
-get_buffer_length:;读取缓冲区字符的实际长度
+get_buffer_length_to_cr:;读取缓冲区字符的长度到CR截止
     push cx
     push bx
     xor cx,cx
     xor bx,bx
     mov si,offset buffer+2
-get_buffer_length_loop:
+buffer_length_loop:
     mov bl,byte ptr ds:[si];获取输入的每一个字符
-    cmp bl,13;CR 回车符
-    je return_buffer_length
     inc cx;cx保存buffer的长度
+    cmp bl,13;CR 回车符
+    je save_buffer_length
     inc si
-    jmp get_buffer_length_loop
-return_buffer_length:
-    add cx,2
-    mov byte ptr ds:[si+1],10;[si+1]=LF
+    jmp buffer_length_loop
+save_buffer_length:
     lea si,buffer_length
     mov [si],cx
     pop bx
