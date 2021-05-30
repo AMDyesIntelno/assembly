@@ -5,19 +5,20 @@ menu                    db 13,10
                         db '1 -> Input',13,10;获取输入,并自动计算总成绩
                         db '2 -> Print All Score',13,10;打印所有成绩(默认根据输入顺序)
                         db '3 -> Inquire',13,10;查询
-                        db '4 -> Ascending Sort',13,10;将总成绩升序排列并打印
-                        db '5 -> Descending Sort',13,10;将总成绩降序排列并打印
+                        db '4 -> Ascending Sort & Print',13,10;将总成绩升序排列并打印
+                        db '5 -> Descending Sort & Print',13,10;将总成绩降序排列并打印
                         db '6 -> Segmentation',13,10;自动计算平均分,最高分,最低分,并进行分数段统计
                         db '7 -> Quit',13,10;退出
                         db 'Please input your choice without enter: ','$'
 CRLF                    db 13,10,'$'
+Score_Sample            db '    id    |    name    |  16x normal score  |  bigwork score  |  final score',13,10,'$'
 input_hint              db 'Please input students profile: ',13,10,'$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
 file                    db 'students.txt',0
 file_handle             db ?,?;保存文件句柄,共两个字节
 buffer                  db 128;输入缓冲
                         db ?
-                        db 128 dup(?)
+                        db 128 dup(?),'$'
 buffer_length           db ?,?;保存缓冲区实际长度,共两个字节
 normal_score            db ?,?;保存平时成绩(未平均)
 bigwork_score           db ?,?;保存大作业成绩
@@ -49,33 +50,64 @@ main_loop:
     call input_choice
     cmp al,'1'
     je Input
+    cmp al,'2'
+    je Print_All_Score
     cmp al,'7'
     je finish
     call input_choice_error
     jmp main_loop
+
 Input:
     call get_score_input
     call get_final_score
     call save_score_in_file
     jmp main_loop
+
+Print_All_Score:
+    xor ax,ax
+
+    mov ah,9
+    lea dx,Score_Sample
+    int 21h
+
+    call open_file
+reading:
+    call read_file
+    cmp ax,0;EOF
+    je read_finish
+
+    mov ah,9
+    lea dx,buffer+2
+    int 21h
+
+    jmp reading
+read_finish:
+    call close_file
+    jmp main_loop
+
 finish:
-    call close_file_func
+    call close_file
     mov ax,4c00h
     int 21h
 
 ;------
 
+file_init:;文件初始化
+    call open_file
+    cmp al,2;返回al=2,说明文件不存在
+    je nofile
+    jmp closefile
+nofile:
+    call create_file
+closefile:
+    call close_file
+    ret
+
+
 main_menu:;打印主菜单
     xor ax,ax
     mov ah,9;Function 09- Output character string
-    mov dx,offset menu
-    int 21h
-    ret
-
-input_choice_error:;选项输入错误
-    xor ax,ax
-    mov ah,9
-    lea dx,error
+    lea dx,menu
     int 21h
     ret
 
@@ -85,7 +117,14 @@ input_choice:;获取选项
     int 21h
 
     mov ah,9
-    mov dx,offset CRLF
+    lea dx,CRLF
+    int 21h
+    ret
+
+input_choice_error:;选项输入错误
+    xor ax,ax
+    mov ah,9
+    lea dx,error
     int 21h
     ret
 
@@ -97,7 +136,7 @@ get_score_input:;获取成绩输入
 
     xor ax,ax
     mov ah,10;Function 0Ah - Buffered input
-    mov dx,offset buffer;每一次输入的成绩都会将buffer中的内容重新覆盖
+    lea dx,buffer;每一次输入的成绩都会将buffer中的内容重新覆盖
     int 21h
     ret
 
@@ -115,9 +154,21 @@ save_score_in_file:
     call get_buffer_length_to_cr
     lea si,buffer_length
     mov bx,[si]
-    inc bx
-    mov [si],bx
-    call write_file_func
+    mov cx,127
+    sub cx,bx
+    lea si,buffer+1
+    add si,bx
+add_space:
+    mov byte ptr ds:[si],' '
+    inc si
+    loop add_space
+    mov byte ptr ds:[si],13
+    inc si
+    mov byte ptr ds:[si],10
+    call open_file
+    call set_append_mode
+    call write_file
+    call close_file
     ret
 
 
@@ -131,7 +182,7 @@ convert_input_score_to_int:;将输入的成绩转换为数值
     xor ax,ax
     mov cx,16
     xor dx,dx
-    mov si,offset buffer+13
+    lea si,buffer+13
 get_number_posi:
     mov bl,byte ptr ds:[si]
     inc si
@@ -260,7 +311,7 @@ calculate_final_score:
 convert_int_to_char:
     lea si,buffer_length
     mov di,[si]
-    mov si,offset buffer+1
+    lea si,buffer+1
     add si,di
     mov byte ptr ds:[si],' ';将回车替换成空格
     inc si
@@ -277,8 +328,8 @@ convert_int_to_char:
     push si
     call dtoc
     mov byte ptr ds:[si],13;CR
-    inc si
-    mov byte ptr ds:[si],10;LF
+    ;inc si
+    ;mov byte ptr ds:[si],10;LF
     ret
 
 
@@ -311,18 +362,7 @@ dtoc_ret:
 
 
 ;文件操作
-file_init:;文件初始化
-    call open_file_func
-    cmp al,2;
-    je create_file
-    jmp create_file_finish
-create_file:
-    call create_file_func
-create_file_finish:
-    call set_file_position_func
-    ret
-
-create_file_func:;创建文件
+create_file:;创建文件
     mov ah,3ch;create file
     mov cx,00
     lea dx,file
@@ -331,7 +371,7 @@ create_file_func:;创建文件
     mov [si],ax;保存文件句柄
     ret
 
-open_file_func:;打开文件
+open_file:;打开文件
     mov ah,3dh
     mov al,2
     lea dx,file
@@ -340,24 +380,35 @@ open_file_func:;打开文件
     mov [si],ax;保存文件句柄
     ret
 
-write_file_func:;写入文件
-    lea si,buffer_length
-    mov cx,[si]
+read_file:
     lea si,file_handle
     mov bx,[si]
-    mov ah,40h
-    mov dx,offset buffer+2
+    lea si,buffer+2
+    mov dx,si
+    mov cx,128
+    mov ah,3fh
     int 21h
     ret
 
-close_file_func:;关闭文件
+write_file:;写入文件
+    ;lea si,buffer_length
+    ;mov cx,[si]
+    mov cx,128
+    lea si,file_handle
+    mov bx,[si]
+    mov ah,40h
+    lea dx,buffer+2
+    int 21h
+    ret
+
+close_file:;关闭文件
     lea si,file_handle
     mov bx,[si]
     mov ah,3eh
     int 21h
     ret
 
-set_file_position_func:;将文件指针移动到末尾,即追加模式
+set_append_mode:;将文件指针移动到末尾,即追加模式
     lea si,file_handle
     mov bx,[si]
     mov ah,42h
@@ -372,7 +423,7 @@ get_buffer_length_to_cr:;读取缓冲区字符的长度到CR截止
     push bx
     xor cx,cx
     xor bx,bx
-    mov si,offset buffer+2
+    lea si,buffer+2
 buffer_length_loop:
     mov bl,byte ptr ds:[si];获取输入的每一个字符
     inc cx;cx保存buffer的长度
