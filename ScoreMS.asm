@@ -14,6 +14,7 @@ CRLF                    db 13,10,'$'
 Score_Sample            db '    id    |    name    |  16x normal score  |  bigwork score  |  final score',13,10,'$'
 input_hint              db 'Please input students profile: ',13,10,'$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
+max_min_avg_score       db 'max:          min:          avg:          ',13,10,'$'
 file                    db 'students.txt',0
 file_handle             db ?,?;保存文件句柄,共两个字节
 buffer                  db 128;输入缓冲
@@ -28,6 +29,14 @@ bigwork_score_integer   db ?,?;保存60%大作业成绩的整数部分
 bigwork_score_decimal   db ?,?;保存60%大作业成绩的小数部分
 final_score_integer     db ?,?;保存总成绩的整数部分
 final_score_decimal     db ?,?;保存总成绩的小数部分
+final_score_posi        db ?,?;保存从文件中读取出的总成绩的位置
+max_final_score_integer db ?,?;保存最高分的整数部分
+max_final_score_decimal db ?,?;保存最高分的小数部分
+min_final_score_integer db ?,?;保存最低分的整数部分
+min_final_score_decimal db ?,?;保存最低分的小数部分
+total_number            db ?,?;保存学生总数
+avg_final_score_integer db ?,?;保存平均分的整数部分
+avg_final_score_decimal db ?,?;保存平均分的小数部分
 data ends
 stack segment
     db 128 dup(0)
@@ -52,6 +61,8 @@ main_loop:
     je Input
     cmp al,'2'
     je Print_All_Score
+    ;cmp al,'6'
+    ;je Segmentation
     cmp al,'7'
     je finish
     call input_choice_error
@@ -64,29 +75,42 @@ Input:
     jmp main_loop
 
 Print_All_Score:
+    call clear_final_score
     xor ax,ax
+    xor cx,cx;cx记录人数,用于计算平均分
 
     mov ah,9
     lea dx,Score_Sample
     int 21h
 
     call open_file
-reading:
+readline:
     call read_file
     cmp ax,0;EOF
-    je read_finish
+    je readline_finish
 
     mov ah,9
     lea dx,buffer+2
     int 21h
+    inc cx
 
-    jmp reading
-read_finish:
+    call get_final_score_posi
+    call convert_final_score_to_int
+    call get_max_final_score
+    call get_min_final_score
+    call add_all_final_score
+
+    jmp readline
+readline_finish:
     call close_file
+    lea si,total_number
+    mov [si],cx
+    call calculate_avg_score
+    call print_max_min_avg_score
+
     jmp main_loop
 
 finish:
-    call close_file
     mov ax,4c00h
     int 21h
 
@@ -170,6 +194,90 @@ add_space:
     call write_file
     call close_file
     ret
+
+
+clear_final_score:
+    xor ax,ax
+    lea si,final_score_decimal
+    mov [si],ax
+    lea si,final_score_integer
+    mov [si],ax
+    lea si,max_final_score_decimal
+    mov [si],ax
+    lea si,max_final_score_integer
+    mov [si],ax
+    lea si,avg_final_score_decimal
+    mov [si],ax
+    lea si,avg_final_score_integer
+    mov [si],ax
+    mov ax,0ffffh
+    lea si,min_final_score_decimal
+    mov [si],ax
+    lea si,min_final_score_integer
+    mov [si],ax
+    ret
+
+print_max_min_avg_score:
+    lea di,max_final_score_integer
+    mov ax,[di]
+    lea si,max_min_avg_score+6
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.'
+    inc si
+    lea di,max_final_score_decimal
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+
+
+    lea di,min_final_score_integer
+    mov ax,[di]
+    lea si,max_min_avg_score+20
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.'
+    inc si
+    lea di,min_final_score_decimal
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+
+
+    lea di,avg_final_score_integer
+    mov ax,[di]
+    lea si,max_min_avg_score+34
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.'
+    inc si
+    lea di,avg_final_score_decimal
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+
+
+    mov ah,9
+    lea dx,max_min_avg_score
+    int 21h
+
+    ret
+
 
 
 ;数据处理
@@ -361,6 +469,209 @@ dtoc_ret:
     ret 4
 
 
+get_final_score_posi:
+    push ax
+    push bx
+    push cx
+    push dx
+
+    xor ax,ax
+    mov cx,18
+    xor dx,dx
+    lea si,buffer+13
+get_final_score_posi_loop:
+    mov bl,byte ptr ds:[si]
+    inc si
+    cmp bl,' '
+    je check_final_score_posi
+    jmp get_final_score_posi_loop
+check_final_score_posi:
+    dec cx
+    jcxz get_final_score_posi_finish
+    jmp get_final_score_posi_loop
+get_final_score_posi_finish:
+    lea di,final_score_posi
+    mov [di],si
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+
+convert_final_score_to_int:
+    push ax
+    push cx
+
+    xor ax,ax
+    mov ch,10
+    lea di,final_score_posi
+    mov si,[di]
+
+convert_integer:
+    mov cl,byte ptr ds:[si]
+    inc si
+    cmp cl,'.'
+    je convert_integer_finish
+    and cl,00001111b;'0'->0
+    mul ch
+    add al,cl
+    jmp convert_integer
+convert_integer_finish:
+    lea di,final_score_integer
+    mov [di],ax
+    xor ax,ax
+convert_decimal:
+    mov cl,byte ptr ds:[si]
+    inc si
+    cmp cl,' '
+    je convert_decimal_finish
+    and cl,00001111b;'0'->0
+    mul ch
+    add al,cl
+    jmp convert_decimal
+convert_decimal_finish:
+    lea di,final_score_decimal
+    mov [di],ax
+
+    pop cx
+    pop ax
+    ret    
+
+
+get_max_final_score:
+    push ax
+    push bx
+
+    lea si,max_final_score_integer
+    mov ax,[si]
+    lea si,final_score_integer
+    mov bx,[si]
+    cmp ax,bx
+    je cmp_max_final_score_decimal
+    ja get_max_final_score_finish
+    lea si,max_final_score_integer
+    mov [si],bx
+    lea si,final_score_decimal
+    mov bx,[si]
+    lea si,max_final_score_decimal
+    mov [si],bx
+    jmp get_max_final_score_finish
+cmp_max_final_score_decimal:
+    lea si,max_final_score_decimal
+    mov ax,[si]
+    lea si,final_score_decimal
+    mov bx,[si]
+    cmp ax,bx
+    jnb get_max_final_score_finish
+    lea si,max_final_score_decimal
+    mov [si],bx
+get_max_final_score_finish:
+    pop bx
+    pop ax
+    ret
+
+
+get_min_final_score:
+    push ax
+    push bx
+
+    lea si,min_final_score_integer
+    mov ax,[si]
+    lea si,final_score_integer
+    mov bx,[si]
+    cmp ax,bx
+    je cmp_min_final_score_decimal
+    jb get_min_final_score_finish
+    lea si,min_final_score_integer
+    mov [si],bx
+    lea si,final_score_decimal
+    mov bx,[si]
+    lea si,min_final_score_decimal
+    mov [si],bx
+    jmp get_min_final_score_finish
+cmp_min_final_score_decimal:
+    lea si,min_final_score_decimal
+    mov ax,[si]
+    lea si,final_score_decimal
+    mov bx,[si]
+    cmp ax,bx
+    jna get_min_final_score_finish
+    lea si,min_final_score_decimal
+    mov [si],bx
+get_min_final_score_finish:
+    pop bx
+    pop ax
+    ret
+
+
+add_all_final_score:
+    push ax
+
+    lea si,final_score_integer
+    mov ax,[si]
+    lea si,avg_final_score_integer
+    add [si],ax
+
+    lea si,final_score_decimal
+    mov ax,[si]
+    lea si,avg_final_score_decimal
+    add [si],ax
+
+    pop ax
+    ret
+
+
+calculate_avg_score:
+    push ax
+    push bx
+    push dx
+
+    lea si,total_number
+    mov al,[si]
+    mov ah,10
+    mul ah
+    mov [si],ax
+
+    xor dx,dx
+    mov bx,10
+    lea si,avg_final_score_decimal
+    mov ax,[si]
+    div bx
+    mov [si],dx
+
+    lea si,avg_final_score_integer
+    add ax,[si]
+
+    xor dx,dx
+    mul bx
+    lea si,avg_final_score_decimal
+    add ax,[si]
+    adc dx,0
+;计算整数
+    lea si,total_number
+    mov bx,[si]
+    div bx
+    lea si,avg_final_score_integer
+    mov [si],ax
+;计算小数
+    mov ax,dx
+    xor dx,dx
+    mov bx,10
+    mul bx
+    lea si,total_number
+    mov bx,[si]
+    div bx
+    lea si,avg_final_score_decimal
+    mov [si],ax
+
+    pop dx
+    pop bx
+    pop ax
+    ret
+
+
 ;文件操作
 create_file:;创建文件
     mov ah,3ch;create file
@@ -381,6 +692,7 @@ open_file:;打开文件
     ret
 
 read_file:
+    push cx
     lea si,file_handle
     mov bx,[si]
     lea si,buffer+2
@@ -388,6 +700,7 @@ read_file:
     mov cx,128
     mov ah,3fh
     int 21h
+    pop cx
     ret
 
 write_file:;写入文件
