@@ -1,6 +1,6 @@
 assume cs:code, ds:data
 data segment
-menu                    db 13,10
+Main_menu               db 13,10
                         db 'Score Management System',13,10;主菜单,13,10 -> CRLF
                         db '1 -> Input',13,10;获取输入,并自动计算总成绩
                         db '2 -> Print All Score',13,10;打印所有成绩(默认根据输入顺序)
@@ -10,21 +10,33 @@ menu                    db 13,10
                         db '6 -> Segmentation',13,10;自动计算平均分,最高分,最低分,并进行分数段统计
                         db '7 -> Quit',13,10;退出
                         db 'Please input your choice without enter: ','$'
+Inquire_menu            db 13,10
+                        db '1 -> Inquire by id',13,10
+                        db '2 -> Inquire by name',13,10
+                        db '3 -> exit menu',13,10
+                        db 'Please input your choice without enter: ','$'
 CRLF                    db 13,10,'$'
+Inquire_fail            db 'Inquire fail,please try again!!!',13,10,'$'
 Score_Sample            db '    id    |    name    |  16x normal score  |  bigwork score  |  final score',13,10,'$'
 input_hint              db 'Please input students profile: ',13,10,'$'
+inquire_input_hint      db 'Please input keywords: ','$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
 max_min_avg_score       db 'max:          min:          avg:          ',13,10,'$'
-score_segment1          db '90-100:        ',13,10,'$'
-score_segment2          db '80-89:         ',13,10,'$'
-score_segment3          db '60-79:         ',13,10,'$'
-score_segment4          db '0-59:          ',13,10,'$'
+score_segment1          db '90-100:          ',13,10,'$'
+score_segment2          db '80-89:           ',13,10,'$'
+score_segment3          db '60-79:           ',13,10,'$'
+score_segment4          db '0-59:            ',13,10,'$'
 file                    db 'students.txt',0
 file_handle             db ?,?;保存文件句柄,共两个字节
-buffer                  db 128;输入缓冲
+Profile_input           db 128;学生信息缓冲
                         db ?
                         db 128 dup(?),'$'
-buffer_length           db ?,?;保存缓冲区实际长度,共两个字节
+Profile_input_length    db ?,?;保存学生信息的实际长度,共两个字节
+Inquire_input           db 32;输入查询缓冲
+                        db ?
+                        db 32 dup(?),'$'
+Inquire_input_length    db ?,?;保存输入查询的实际长度,共两个字节
+Inquire_fail_check      db ?,?;记录是否查询成功
 normal_score            db ?,?;保存平时成绩(未平均)
 bigwork_score           db ?,?;保存大作业成绩
 normal_score_integer    db ?,?;保存40%平时成绩的整数部分
@@ -63,12 +75,14 @@ main:
 
     call file_init
 main_loop:
-    call main_menu
+    call print_main_menu
     call input_choice
     cmp al,'1'
     je Input
     cmp al,'2'
     je Print_All_Score
+    cmp al,'3'
+    je Inquire
     cmp al,'6'
     je Segmentation
     cmp al,'7'
@@ -77,43 +91,44 @@ main_loop:
     jmp main_loop
 
 Input:
-    call get_score_input
+    call get_profile_input
     call get_final_score
     call save_score_in_file
     jmp main_loop
 
 Print_All_Score:
     call clear_final_score
-    xor ax,ax
-    xor cx,cx;cx记录人数,用于计算平均分
+    call read_score_from_file
+    jmp main_loop
 
-    mov ah,9
-    lea dx,Score_Sample
-    int 21h
+Inquire:
+    call print_inquire_menu
+    call input_choice
+    cmp al,'1'
+    je Inquire_by_id
+    cmp al,'2'
+    je Inquire_by_name
+    cmp al,'3'
+    je main_loop
+    call input_choice_error
+    jmp Inquire
 
-    call open_file
-Print_All_Score_loop:
-    call read_file
-    cmp ax,0;EOF
-    je Print_All_Score_finish
+Inquire_by_id:
+    call get_inquire_input
+    call print_crlf
+    
+    call get_Inquire_input_length
 
-    mov ah,9
-    lea dx,buffer+2
-    int 21h
-    inc cx
+    call Inquire_by_id_func
+    jmp main_loop
 
-    call get_final_score_posi
-    call convert_final_score_to_int
-    call get_max_final_score
-    call get_min_final_score
-    call add_all_final_score
-    jmp Print_All_Score_loop
-Print_All_Score_finish:
-    call close_file
-    lea si,total_number
-    mov [si],cx
-    call calculate_avg_score
-    call print_max_min_avg_score
+Inquire_by_name:
+    call get_inquire_input
+    call print_crlf
+
+    call get_Inquire_input_length
+
+    call Inquire_by_name_func
     jmp main_loop
 
 Segmentation:
@@ -150,10 +165,10 @@ closefile:
     ret
 
 
-main_menu:;打印主菜单
+print_main_menu:;打印主菜单
     xor ax,ax
     mov ah,9;Function 09- Output character string
-    lea dx,menu
+    lea dx,Main_menu
     int 21h
     ret
 
@@ -161,10 +176,7 @@ input_choice:;获取选项
     xor ax,ax
     mov ah,1;Function 1- Character input with echo
     int 21h
-
-    mov ah,9
-    lea dx,CRLF
-    int 21h
+    call print_crlf
     ret
 
 input_choice_error:;选项输入错误
@@ -174,7 +186,7 @@ input_choice_error:;选项输入错误
     int 21h
     ret
 
-get_score_input:;获取成绩输入
+get_profile_input:;获取信息输入
     xor ax,ax
     mov ah,9
     lea dx,input_hint
@@ -182,7 +194,7 @@ get_score_input:;获取成绩输入
 
     xor ax,ax
     mov ah,10;Function 0Ah - Buffered input
-    lea dx,buffer;每一次输入的成绩都会将buffer中的内容重新覆盖
+    lea dx,Profile_input;每一次输入的成绩都会将缓冲区中的内容重新覆盖
     int 21h
     ret
 
@@ -195,14 +207,22 @@ get_final_score:
     ret
 
 save_score_in_file:
+    lea si,Profile_input+2
+    push si
+    lea si,Profile_input_length
+    push si
     call get_buffer_length_to_cr
     call convert_int_to_char
+    lea si,Profile_input+2
+    push si
+    lea si,Profile_input_length
+    push si
     call get_buffer_length_to_cr
-    lea si,buffer_length
+    lea si,Profile_input_length
     mov bx,[si]
     mov cx,127
     sub cx,bx
-    lea si,buffer+1
+    lea si,Profile_input+1
     add si,bx
 add_space:
     mov byte ptr ds:[si],' '
@@ -216,6 +236,111 @@ add_space:
     call write_file
     call close_file
     ret
+
+
+get_inquire_input:
+    xor ax,ax
+    mov ah,9
+    lea dx,inquire_input_hint
+    int 21h
+
+    xor ax,ax
+    mov ah,10
+    lea dx,Inquire_input
+    int 21h
+    ret
+
+
+print_crlf:
+    push ax
+    xor ax,ax
+    mov ah,9
+    lea dx,CRLF
+    int 21h
+    pop ax
+    ret
+
+
+get_Inquire_input_length:
+    lea si,Inquire_input+2
+    push si
+    lea si,Inquire_input_length
+    push si
+    call get_buffer_length_to_cr
+    lea si,Inquire_input_length
+    dec word ptr ds:[si]
+    ret
+
+Inquire_by_id_func:;0154
+    lea si,Inquire_fail_check
+    mov word ptr ds:[si],0
+    call open_file
+get_id_from_file_loop:
+    call read_file
+    cmp ax,0;EOF
+    je get_id_from_file_finish
+
+    lea si,Profile_input+2
+    push si;要输出的行
+    push si;文本串位置
+    mov cx,10
+    push cx;文本串长度
+    lea si,Inquire_input+2
+    push si;模版串位置
+    lea si,Inquire_input_length
+    mov cx,word ptr ds:[si]
+    push cx;模版串长度
+    call Inquire_check
+    jmp get_id_from_file_loop
+get_id_from_file_finish:
+    call close_file
+    lea si,Inquire_fail_check
+    mov cx,word ptr ds:[si]
+    jcxz Inquire_by_id_fail_print
+    jmp Inquire_by_id_fail_print_finish
+Inquire_by_id_fail_print:
+    mov ah,9
+    lea dx,Inquire_fail
+    int 21h
+Inquire_by_id_fail_print_finish:
+    ret
+
+
+Inquire_by_name_func:
+    lea si,Inquire_fail_check
+    mov word ptr ds:[si],0
+    call open_file
+get_name_from_file_loop:
+    call read_file
+    cmp ax,0;EOF
+    je get_name_from_file_finish
+
+    lea si,Profile_input+2
+    push si;要输出的行
+    lea si,Profile_input+13
+    push si;文本串位置
+    call get_name_length_from_file
+    push cx;文本串长度
+    lea si,Inquire_input+2
+    push si;模版串位置
+    lea si,Inquire_input_length
+    mov cx,word ptr ds:[si]
+    push cx;模版串长度
+    call Inquire_check
+    jmp get_name_from_file_loop
+get_name_from_file_finish:
+    call close_file
+    lea si,Inquire_fail_check
+    mov cx,word ptr ds:[si]
+    jcxz Inquire_by_name_fail_print
+    jmp Inquire_by_name_fail_print_finish
+Inquire_by_name_fail_print:
+    mov ah,9
+    lea dx,Inquire_fail
+    int 21h
+Inquire_by_name_fail_print_finish:
+    ret
+
 
 
 clear_final_score:
@@ -238,6 +363,40 @@ clear_final_score:
     lea si,min_final_score_integer
     mov [si],ax
     ret
+
+read_score_from_file:
+    xor ax,ax
+    xor cx,cx;cx记录人数,用于计算平均分
+
+    mov ah,9
+    lea dx,Score_Sample
+    int 21h
+
+    call open_file
+read_score_from_file_loop:
+    call read_file
+    cmp ax,0;EOF
+    je read_score_from_file_finish
+
+    mov ah,9
+    lea dx,Profile_input+2
+    int 21h
+    inc cx
+
+    call get_final_score_posi
+    call convert_final_score_to_int
+    call get_max_final_score
+    call get_min_final_score
+    call add_all_final_score
+    jmp read_score_from_file_loop
+read_score_from_file_finish:
+    call close_file
+    lea si,total_number
+    mov [si],cx
+    call calculate_avg_score
+    call print_max_min_avg_score
+    ret
+
 
 print_max_min_avg_score:
     lea di,max_final_score_integer
@@ -298,6 +457,14 @@ print_max_min_avg_score:
     lea dx,max_min_avg_score
     int 21h
 
+    ret
+
+
+print_inquire_menu:
+    xor ax,ax
+    mov ah,9
+    lea dx,Inquire_menu
+    int 21h
     ret
 
 
@@ -403,6 +570,17 @@ print_segment:
     pop ax
     ret
 
+get_name_length_from_file:
+    xor cx,cx
+    lea si,Profile_input+12
+get_name_length_loop:
+    inc si
+    inc cx
+    cmp byte ptr ds:[si],' '
+    jne get_name_length_loop
+    ret
+
+
 ;数据处理
 convert_input_score_to_int:;将输入的成绩转换为数值
     push ax
@@ -413,7 +591,7 @@ convert_input_score_to_int:;将输入的成绩转换为数值
     xor ax,ax
     mov cx,16
     xor dx,dx
-    lea si,buffer+13
+    lea si,Profile_input+13
 get_number_posi:
     mov bl,byte ptr ds:[si]
     inc si
@@ -540,9 +718,9 @@ calculate_final_score:
 
 
 convert_int_to_char:
-    lea si,buffer_length
+    lea si,Profile_input_length
     mov di,[si]
-    lea si,buffer+1
+    lea si,Profile_input+1
     add si,di
     mov byte ptr ds:[si],' ';将回车替换成空格
     inc si
@@ -559,8 +737,6 @@ convert_int_to_char:
     push si
     call dtoc
     mov byte ptr ds:[si],13;CR
-    ;inc si
-    ;mov byte ptr ds:[si],10;LF
     ret
 
 
@@ -601,7 +777,7 @@ get_final_score_posi:
     xor ax,ax
     mov cx,18
     xor dx,dx
-    lea si,buffer+13
+    lea si,Profile_input+13
 get_final_score_posi_loop:
     mov bl,byte ptr ds:[si]
     inc si
@@ -795,6 +971,55 @@ calculate_avg_score:
     ret
 
 
+Inquire_check:
+    push bp
+    mov bp,sp
+    mov si,ss:[bp+10];文本串位置
+    mov cx,ss:[bp+8];文本串长度
+    mov di,ss:[bp+6];模版串位置
+Inquire_find_posi:
+    cmp cx,word ptr ss:[bp+4]
+    jb Inquire_check_ret
+    mov ah,byte ptr ds:[si]
+    mov al,byte ptr ds:[di]
+    cmp al,ah
+    je Inquire_next_check
+    inc si
+    loop Inquire_find_posi
+    jmp Inquire_check_ret
+Inquire_next_check:
+    push si
+    push cx
+    mov cx,ss:[bp+4];模版串长度
+Inquire_check_loop:
+    dec cx
+    jcxz Inquire_print
+    inc si
+    inc di
+    mov ah,byte ptr ds:[si]
+    mov al,byte ptr ds:[di]
+    cmp al,ah
+    je Inquire_check_loop
+    jne Inquire_check_finish
+Inquire_check_finish:
+    pop cx
+    pop si
+    inc si
+    mov di,ss:[bp+6]
+    dec cx
+    jmp Inquire_find_posi
+Inquire_print:
+    lea si,Inquire_fail_check
+    mov word ptr ds:[si],1
+    mov ah,9
+    mov dx,ss:[bp+12];要输出的行
+    int 21h
+Inquire_check_ret:
+    mov sp,bp
+    pop bp
+    ret 10
+
+
 ;文件操作
 create_file:;创建文件
     mov ah,3ch;create file
@@ -818,7 +1043,7 @@ read_file:
     push cx
     lea si,file_handle
     mov bx,[si]
-    lea si,buffer+2
+    lea si,Profile_input+2
     mov dx,si
     mov cx,128
     mov ah,3fh
@@ -827,13 +1052,11 @@ read_file:
     ret
 
 write_file:;写入文件
-    ;lea si,buffer_length
-    ;mov cx,[si]
     mov cx,128
     lea si,file_handle
     mov bx,[si]
     mov ah,40h
-    lea dx,buffer+2
+    lea dx,Profile_input+2
     int 21h
     ret
 
@@ -855,11 +1078,13 @@ set_append_mode:;将文件指针移动到末尾,即追加模式
     ret
 
 get_buffer_length_to_cr:;读取缓冲区字符的长度到CR截止
+    push bp
+    mov bp,sp
     push cx
     push bx
     xor cx,cx
     xor bx,bx
-    lea si,buffer+2
+    mov si,ss:[bp+6]
 buffer_length_loop:
     mov bl,byte ptr ds:[si];获取输入的每一个字符
     inc cx;cx保存buffer的长度
@@ -868,11 +1093,14 @@ buffer_length_loop:
     inc si
     jmp buffer_length_loop
 save_buffer_length:
-    lea si,buffer_length
+    mov si,ss:[bp+4]
     mov [si],cx
+
     pop bx
     pop cx
-    ret
+    mov sp,bp
+    pop bp
+    ret 4
 
 code ends
 end main
