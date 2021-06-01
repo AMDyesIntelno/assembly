@@ -15,6 +15,10 @@ Score_Sample            db '    id    |    name    |  16x normal score  |  bigwo
 input_hint              db 'Please input students profile: ',13,10,'$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
 max_min_avg_score       db 'max:          min:          avg:          ',13,10,'$'
+score_segment1          db '90-100:        ',13,10,'$'
+score_segment2          db '80-89:         ',13,10,'$'
+score_segment3          db '60-79:         ',13,10,'$'
+score_segment4          db '0-59:          ',13,10,'$'
 file                    db 'students.txt',0
 file_handle             db ?,?;保存文件句柄,共两个字节
 buffer                  db 128;输入缓冲
@@ -37,6 +41,10 @@ min_final_score_decimal db ?,?;保存最低分的小数部分
 total_number            db ?,?;保存学生总数
 avg_final_score_integer db ?,?;保存平均分的整数部分
 avg_final_score_decimal db ?,?;保存平均分的小数部分
+score_segment1_number   db ?,?;记录90-100的人数
+score_segment2_number   db ?,?;记录80-89的人数
+score_segment3_number   db ?,?;记录60-79的人数
+score_segment4_number   db ?,?;记录0-60的人数
 data ends
 stack segment
     db 128 dup(0)
@@ -61,8 +69,8 @@ main_loop:
     je Input
     cmp al,'2'
     je Print_All_Score
-    ;cmp al,'6'
-    ;je Segmentation
+    cmp al,'6'
+    je Segmentation
     cmp al,'7'
     je finish
     call input_choice_error
@@ -84,10 +92,10 @@ Print_All_Score:
     int 21h
 
     call open_file
-readline:
+Print_All_Score_loop:
     call read_file
     cmp ax,0;EOF
-    je readline_finish
+    je Print_All_Score_finish
 
     mov ah,9
     lea dx,buffer+2
@@ -99,15 +107,29 @@ readline:
     call get_max_final_score
     call get_min_final_score
     call add_all_final_score
-
-    jmp readline
-readline_finish:
+    jmp Print_All_Score_loop
+Print_All_Score_finish:
     call close_file
     lea si,total_number
     mov [si],cx
     call calculate_avg_score
     call print_max_min_avg_score
+    jmp main_loop
 
+Segmentation:
+    call clear_score_segment_number
+    call open_file
+Segmentation_loop:
+    call read_file
+    cmp ax,0;EOF
+    je Segmentation_loop_finish
+    call get_final_score_posi
+    call convert_final_score_to_int
+    call divide_segments
+    jmp Segmentation_loop
+Segmentation_loop_finish:
+    call close_file
+    call print_segment
     jmp main_loop
 
 finish:
@@ -279,6 +301,107 @@ print_max_min_avg_score:
     ret
 
 
+clear_score_segment_number:
+    push cx
+    mov cx,8
+    lea si,score_segment1_number
+clear_score_segment_loop:
+    mov byte ptr ds:[si],0
+    inc si
+    loop clear_score_segment_loop
+    
+    pop cx
+    ret
+
+
+divide_segments:
+    push ax
+    lea si,final_score_integer
+    mov ax,[si]
+    cmp ax,90
+    jnb segment1
+    cmp ax,80
+    jnb segment2
+    cmp ax,60
+    jnb segment3
+    lea si,score_segment4_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+segment1:
+    lea si,score_segment1_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+segment2:
+    lea si,score_segment2_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+segment3:
+    lea si,score_segment3_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+divide_segments_finish:
+    pop ax
+    ret
+
+
+print_segment:
+    push ax
+
+    lea si,score_segment1_number
+    mov ax,[si]
+    lea di,score_segment1+10
+    push ax
+    push di
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+    mov ah,9
+    lea dx,score_segment1
+    int 21h
+
+
+    lea si,score_segment2_number
+    mov ax,[si]
+    lea di,score_segment2+10
+    push ax
+    push di
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+    mov ah,9
+    lea dx,score_segment2
+    int 21h
+
+    lea si,score_segment3_number
+    mov ax,[si]
+    lea di,score_segment3+10
+    push ax
+    push di
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+    mov ah,9
+    lea dx,score_segment3
+    int 21h
+
+    lea si,score_segment4_number
+    mov ax,[si]
+    lea di,score_segment4+10
+    push ax
+    push di
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+    mov ah,9
+    lea dx,score_segment4
+    int 21h
+    
+    pop ax
+    ret
 
 ;数据处理
 convert_input_score_to_int:;将输入的成绩转换为数值
