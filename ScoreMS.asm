@@ -32,6 +32,7 @@ Profile_input           db 128;学生信息缓冲
                         db ?
                         db 128 dup(?),'$'
 Profile_input_length    db ?,?;保存学生信息的实际长度,共两个字节
+final_score_sort        db 256 dup(?);前两个??代表属于第几行,后两个??用于记录总成绩
 Inquire_input           db 32;输入查询缓冲
                         db ?
                         db 32 dup(?),'$'
@@ -83,6 +84,10 @@ main_loop:
     je Print_All_Score
     cmp al,'3'
     je Inquire
+    cmp al,'4'
+    je Ascending_Sort_and_Print
+    cmp al,'5'
+    je Descending_Sort_and_Print
     cmp al,'6'
     je Segmentation
     cmp al,'7'
@@ -129,6 +134,18 @@ Inquire_by_name:
     call get_inquire_input_length
 
     call Inquire_by_name_func
+    jmp main_loop
+
+Ascending_Sort_and_Print:
+    call get_final_score_from_file
+    call ascending_sort
+    call sort_print
+    jmp main_loop
+
+Descending_Sort_and_Print:
+    call get_final_score_from_file
+    call descending_sort
+    call sort_print
     jmp main_loop
 
 Segmentation:
@@ -398,6 +415,108 @@ Inquire_by_name_fail_print:
     lea dx,Inquire_fail
     int 21h
 Inquire_by_name_fail_print_finish:
+    ret
+
+
+get_final_score_from_file:
+    xor cx,cx
+    lea bx,final_score_sort
+    call open_file
+get_final_score_loop:
+    call read_file
+    cmp ax,0;EOF
+    je get_final_score_loop_finish
+    call get_final_score_posi
+    call convert_final_score_to_int
+    lea si,final_score_integer
+    mov ax,word ptr ds:[si]
+    mov ah,10
+    mul ah
+    lea si,final_score_decimal
+    add ax,word ptr ds:[si]
+    mov word ptr ds:[bx],cx
+    inc cx
+    add bx,2
+    mov word ptr ds:[bx],ax
+    add bx,2
+    jmp get_final_score_loop
+get_final_score_loop_finish:
+    lea si,total_number
+    mov word ptr ds:[si],cx
+    call close_file
+    ret
+
+
+ascending_sort:
+    lea si,total_number
+    mov cx,word ptr ds:[si]
+    lea bx,final_score_sort
+ascending_sort_loop1:
+    xor si,si
+    mov di,1
+ascending_sort_loop2:
+    mov ax,word ptr ds:[bx+si+2]
+    mov dx,word ptr ds:[bx+si+6]
+    cmp ax,dx
+    jb ascending_sort_loop2_check
+    mov word ptr ds:[bx+si+6],ax
+    mov word ptr ds:[bx+si+2],dx
+    mov ax,word ptr ds:[bx+si]
+    mov dx,word ptr ds:[bx+si+4]
+    mov word ptr ds:[bx+si],dx
+    mov word ptr ds:[bx+si+4],ax
+ascending_sort_loop2_check:
+    add si,4
+    inc di
+    cmp di,cx
+    jb ascending_sort_loop2
+    loop ascending_sort_loop1
+    ret
+
+
+descending_sort:
+    lea si,total_number
+    mov cx,word ptr ds:[si]
+    lea bx,final_score_sort
+descending_sort_loop1:
+    xor si,si
+    mov di,1
+descending_sort_loop2:
+    mov ax,word ptr ds:[bx+si+2]
+    mov dx,word ptr ds:[bx+si+6]
+    cmp ax,dx
+    ja descending_sort_loop2_check
+    mov word ptr ds:[bx+si+6],ax
+    mov word ptr ds:[bx+si+2],dx
+    mov ax,word ptr ds:[bx+si]
+    mov dx,word ptr ds:[bx+si+4]
+    mov word ptr ds:[bx+si],dx
+    mov word ptr ds:[bx+si+4],ax
+descending_sort_loop2_check:
+    add si,4
+    inc di
+    cmp di,cx
+    jb descending_sort_loop2
+    loop descending_sort_loop1
+    ret
+
+
+sort_print:
+    call open_file
+    lea si,total_number
+    mov cx,word ptr ds:[si]
+    lea bx,final_score_sort
+sort_print_loop:
+    mov ax,word ptr ds:[bx]
+    push ax
+    call set_current_file_position
+    call read_file
+    lea dx,Profile_input+2
+    mov ah,9
+    int 21h
+    add bx,4
+    loop sort_print_loop
+    call close_file
     ret
 
 
@@ -893,7 +1012,7 @@ convert_decimal_finish:
 
     pop cx
     pop ax
-    ret    
+    ret
 
 
 get_max_final_score:
@@ -1074,6 +1193,7 @@ open_file:;打开文件
     ret
 
 read_file:
+    push bx
     push cx
     lea si,file_handle
     mov bx,[si]
@@ -1083,6 +1203,7 @@ read_file:
     mov ah,3fh
     int 21h
     pop cx
+    pop bx
     ret
 
 write_file:;写入文件
@@ -1111,5 +1232,32 @@ set_append_mode:;将文件指针移动到末尾,即追加模式
     int 21h
     ret
 
+
+set_current_file_position:
+    push bp
+    mov bp,sp
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov ax,128
+    mov bx,word ptr ss:[bp+4]
+    mul bx
+    mov cx,dx
+    mov dx,ax;确定要读取哪一行
+    xor ax,ax
+    mov ah,42h
+    lea si,file_handle
+    mov bx,[si]
+    int 21h
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    mov sp,bp
+    pop bp
+    ret 2
 code ends
 end main
