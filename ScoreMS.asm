@@ -76,7 +76,7 @@ main:
     call file_init
 main_loop:
     call print_main_menu
-    call input_choice
+    call get_input_choice
     cmp al,'1'
     je Input
     cmp al,'2'
@@ -87,7 +87,7 @@ main_loop:
     je Segmentation
     cmp al,'7'
     je finish
-    call input_choice_error
+    call get_input_choice_error
     jmp main_loop
 
 Input:
@@ -103,21 +103,21 @@ Print_All_Score:
 
 Inquire:
     call print_inquire_menu
-    call input_choice
+    call get_input_choice
     cmp al,'1'
     je Inquire_by_id
     cmp al,'2'
     je Inquire_by_name
     cmp al,'3'
     je main_loop
-    call input_choice_error
+    call get_input_choice_error
     jmp Inquire
 
 Inquire_by_id:
     call get_inquire_input
     call print_crlf
     
-    call get_Inquire_input_length
+    call get_inquire_input_length
 
     call Inquire_by_id_func
     jmp main_loop
@@ -126,24 +126,14 @@ Inquire_by_name:
     call get_inquire_input
     call print_crlf
 
-    call get_Inquire_input_length
+    call get_inquire_input_length
 
     call Inquire_by_name_func
     jmp main_loop
 
 Segmentation:
     call clear_score_segment_number
-    call open_file
-Segmentation_loop:
-    call read_file
-    cmp ax,0;EOF
-    je Segmentation_loop_finish
-    call get_final_score_posi
-    call convert_final_score_to_int
-    call divide_segments
-    jmp Segmentation_loop
-Segmentation_loop_finish:
-    call close_file
+    call segment_func
     call print_segment
     jmp main_loop
 
@@ -172,19 +162,22 @@ print_main_menu:;打印主菜单
     int 21h
     ret
 
-input_choice:;获取选项
+
+get_input_choice:;获取选项
     xor ax,ax
     mov ah,1;Function 1- Character input with echo
     int 21h
     call print_crlf
     ret
 
-input_choice_error:;选项输入错误
+
+get_input_choice_error:;选项输入错误
     xor ax,ax
     mov ah,9
     lea dx,error
     int 21h
     ret
+
 
 get_profile_input:;获取信息输入
     xor ax,ax
@@ -205,6 +198,7 @@ get_final_score:
     call calculate_bigwork_score;计算60%的大作业成绩
     call calculate_final_score;计算总成绩
     ret
+
 
 save_score_in_file:
     lea si,Profile_input+2
@@ -238,6 +232,70 @@ add_space:
     ret
 
 
+clear_final_score:
+    xor ax,ax
+    lea si,final_score_decimal
+    mov [si],ax
+    lea si,final_score_integer
+    mov [si],ax
+    lea si,max_final_score_decimal
+    mov [si],ax
+    lea si,max_final_score_integer
+    mov [si],ax
+    lea si,avg_final_score_decimal
+    mov [si],ax
+    lea si,avg_final_score_integer
+    mov [si],ax
+    mov ax,0ffffh
+    lea si,min_final_score_decimal
+    mov [si],ax
+    lea si,min_final_score_integer
+    mov [si],ax
+    ret
+
+
+read_score_from_file:
+    xor ax,ax
+    xor cx,cx;cx记录人数,用于计算平均分
+
+    mov ah,9
+    lea dx,Score_Sample
+    int 21h
+
+    call open_file
+read_score_from_file_loop:
+    call read_file
+    cmp ax,0;EOF
+    je read_score_from_file_finish
+
+    mov ah,9
+    lea dx,Profile_input+2
+    int 21h
+    inc cx
+
+    call get_final_score_posi
+    call convert_final_score_to_int
+    call get_max_final_score
+    call get_min_final_score
+    call add_all_final_score
+    jmp read_score_from_file_loop
+read_score_from_file_finish:
+    call close_file
+    lea si,total_number
+    mov [si],cx
+    call calculate_avg_score
+    call print_max_min_avg_score
+    ret
+
+
+print_inquire_menu:
+    xor ax,ax
+    mov ah,9
+    lea dx,Inquire_menu
+    int 21h
+    ret
+
+
 get_inquire_input:
     xor ax,ax
     mov ah,9
@@ -261,7 +319,7 @@ print_crlf:
     ret
 
 
-get_Inquire_input_length:
+get_inquire_input_length:
     lea si,Inquire_input+2
     push si
     lea si,Inquire_input_length
@@ -270,6 +328,7 @@ get_Inquire_input_length:
     lea si,Inquire_input_length
     dec word ptr ds:[si]
     ret
+
 
 Inquire_by_id_func:;0154
     lea si,Inquire_fail_check
@@ -342,132 +401,6 @@ Inquire_by_name_fail_print_finish:
     ret
 
 
-
-clear_final_score:
-    xor ax,ax
-    lea si,final_score_decimal
-    mov [si],ax
-    lea si,final_score_integer
-    mov [si],ax
-    lea si,max_final_score_decimal
-    mov [si],ax
-    lea si,max_final_score_integer
-    mov [si],ax
-    lea si,avg_final_score_decimal
-    mov [si],ax
-    lea si,avg_final_score_integer
-    mov [si],ax
-    mov ax,0ffffh
-    lea si,min_final_score_decimal
-    mov [si],ax
-    lea si,min_final_score_integer
-    mov [si],ax
-    ret
-
-read_score_from_file:
-    xor ax,ax
-    xor cx,cx;cx记录人数,用于计算平均分
-
-    mov ah,9
-    lea dx,Score_Sample
-    int 21h
-
-    call open_file
-read_score_from_file_loop:
-    call read_file
-    cmp ax,0;EOF
-    je read_score_from_file_finish
-
-    mov ah,9
-    lea dx,Profile_input+2
-    int 21h
-    inc cx
-
-    call get_final_score_posi
-    call convert_final_score_to_int
-    call get_max_final_score
-    call get_min_final_score
-    call add_all_final_score
-    jmp read_score_from_file_loop
-read_score_from_file_finish:
-    call close_file
-    lea si,total_number
-    mov [si],cx
-    call calculate_avg_score
-    call print_max_min_avg_score
-    ret
-
-
-print_max_min_avg_score:
-    lea di,max_final_score_integer
-    mov ax,[di]
-    lea si,max_min_avg_score+6
-    push ax
-    push si
-    call dtoc
-    mov byte ptr ds:[si],'.'
-    inc si
-    lea di,max_final_score_decimal
-    mov ax,[di]
-    push ax
-    push si
-    call dtoc
-    mov byte ptr ds:[si],' '
-    inc si
-    mov byte ptr ds:[si],' '
-
-
-    lea di,min_final_score_integer
-    mov ax,[di]
-    lea si,max_min_avg_score+20
-    push ax
-    push si
-    call dtoc
-    mov byte ptr ds:[si],'.'
-    inc si
-    lea di,min_final_score_decimal
-    mov ax,[di]
-    push ax
-    push si
-    call dtoc
-    mov byte ptr ds:[si],' '
-    inc si
-    mov byte ptr ds:[si],' '
-
-
-    lea di,avg_final_score_integer
-    mov ax,[di]
-    lea si,max_min_avg_score+34
-    push ax
-    push si
-    call dtoc
-    mov byte ptr ds:[si],'.'
-    inc si
-    lea di,avg_final_score_decimal
-    mov ax,[di]
-    push ax
-    push si
-    call dtoc
-    mov byte ptr ds:[si],' '
-    inc si
-    mov byte ptr ds:[si],' '
-
-
-    mov ah,9
-    lea dx,max_min_avg_score
-    int 21h
-
-    ret
-
-
-print_inquire_menu:
-    xor ax,ax
-    mov ah,9
-    lea dx,Inquire_menu
-    int 21h
-    ret
-
-
 clear_score_segment_number:
     push cx
     mov cx,8
@@ -481,33 +414,18 @@ clear_score_segment_loop:
     ret
 
 
-divide_segments:
-    push ax
-    lea si,final_score_integer
-    mov ax,[si]
-    cmp ax,90
-    jnb segment1
-    cmp ax,80
-    jnb segment2
-    cmp ax,60
-    jnb segment3
-    lea si,score_segment4_number
-    inc word ptr ds:[si]
-    jmp divide_segments_finish
-segment1:
-    lea si,score_segment1_number
-    inc word ptr ds:[si]
-    jmp divide_segments_finish
-segment2:
-    lea si,score_segment2_number
-    inc word ptr ds:[si]
-    jmp divide_segments_finish
-segment3:
-    lea si,score_segment3_number
-    inc word ptr ds:[si]
-    jmp divide_segments_finish
-divide_segments_finish:
-    pop ax
+segment_func:
+    call open_file
+Segmentation_loop:
+    call read_file
+    cmp ax,0;EOF
+    je Segmentation_loop_finish
+    call get_final_score_posi
+    call convert_final_score_to_int
+    call divide_segments
+    jmp Segmentation_loop
+Segmentation_loop_finish:
+    call close_file
     ret
 
 
@@ -569,6 +487,145 @@ print_segment:
     
     pop ax
     ret
+
+;-----
+
+print_max_min_avg_score:
+    lea di,max_final_score_integer
+    mov ax,[di]
+    lea si,max_min_avg_score+6
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.'
+    inc si
+    lea di,max_final_score_decimal
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+
+    lea di,min_final_score_integer
+    mov ax,[di]
+    lea si,max_min_avg_score+20
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.'
+    inc si
+    lea di,min_final_score_decimal
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+
+    lea di,avg_final_score_integer
+    mov ax,[di]
+    lea si,max_min_avg_score+34
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],'.'
+    inc si
+    lea di,avg_final_score_decimal
+    mov ax,[di]
+    push ax
+    push si
+    call dtoc
+    mov byte ptr ds:[si],' '
+    inc si
+    mov byte ptr ds:[si],' '
+
+    mov ah,9
+    lea dx,max_min_avg_score
+    int 21h
+    ret
+
+
+Inquire_check:
+    push bp
+    mov bp,sp
+    mov si,ss:[bp+10];文本串位置
+    mov cx,ss:[bp+8];文本串长度
+    mov di,ss:[bp+6];模版串位置
+Inquire_find_posi:
+    cmp cx,word ptr ss:[bp+4]
+    jb Inquire_check_ret
+    mov ah,byte ptr ds:[si]
+    mov al,byte ptr ds:[di]
+    cmp al,ah
+    je Inquire_next_check
+    inc si
+    loop Inquire_find_posi
+    jmp Inquire_check_ret
+Inquire_next_check:
+    push si
+    push cx
+    mov cx,ss:[bp+4];模版串长度
+Inquire_check_loop:
+    dec cx
+    jcxz Inquire_print
+    inc si
+    inc di
+    mov ah,byte ptr ds:[si]
+    mov al,byte ptr ds:[di]
+    cmp al,ah
+    je Inquire_check_loop
+    jne Inquire_check_finish
+Inquire_check_finish:
+    pop cx
+    pop si
+    inc si
+    mov di,ss:[bp+6]
+    dec cx
+    jmp Inquire_find_posi
+Inquire_print:
+    lea si,Inquire_fail_check
+    mov word ptr ds:[si],1
+    mov ah,9
+    mov dx,ss:[bp+12];要输出的行
+    int 21h
+Inquire_check_ret:
+    mov sp,bp
+    pop bp
+    ret 10
+
+
+divide_segments:
+    push ax
+    lea si,final_score_integer
+    mov ax,[si]
+    cmp ax,90
+    jnb segment1
+    cmp ax,80
+    jnb segment2
+    cmp ax,60
+    jnb segment3
+    lea si,score_segment4_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+segment1:
+    lea si,score_segment1_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+segment2:
+    lea si,score_segment2_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+segment3:
+    lea si,score_segment3_number
+    inc word ptr ds:[si]
+    jmp divide_segments_finish
+divide_segments_finish:
+    pop ax
+    ret
+
 
 get_name_length_from_file:
     xor cx,cx
@@ -971,53 +1028,30 @@ calculate_avg_score:
     ret
 
 
-Inquire_check:
+get_buffer_length_to_cr:;读取缓冲区字符的长度到CR截止
     push bp
     mov bp,sp
-    mov si,ss:[bp+10];文本串位置
-    mov cx,ss:[bp+8];文本串长度
-    mov di,ss:[bp+6];模版串位置
-Inquire_find_posi:
-    cmp cx,word ptr ss:[bp+4]
-    jb Inquire_check_ret
-    mov ah,byte ptr ds:[si]
-    mov al,byte ptr ds:[di]
-    cmp al,ah
-    je Inquire_next_check
-    inc si
-    loop Inquire_find_posi
-    jmp Inquire_check_ret
-Inquire_next_check:
-    push si
     push cx
-    mov cx,ss:[bp+4];模版串长度
-Inquire_check_loop:
-    dec cx
-    jcxz Inquire_print
+    push bx
+    xor cx,cx
+    xor bx,bx
+    mov si,ss:[bp+6]
+buffer_length_loop:
+    mov bl,byte ptr ds:[si];获取输入的每一个字符
+    inc cx;cx保存buffer的长度
+    cmp bl,13;CR 回车符
+    je save_buffer_length
     inc si
-    inc di
-    mov ah,byte ptr ds:[si]
-    mov al,byte ptr ds:[di]
-    cmp al,ah
-    je Inquire_check_loop
-    jne Inquire_check_finish
-Inquire_check_finish:
+    jmp buffer_length_loop
+save_buffer_length:
+    mov si,ss:[bp+4]
+    mov [si],cx
+
+    pop bx
     pop cx
-    pop si
-    inc si
-    mov di,ss:[bp+6]
-    dec cx
-    jmp Inquire_find_posi
-Inquire_print:
-    lea si,Inquire_fail_check
-    mov word ptr ds:[si],1
-    mov ah,9
-    mov dx,ss:[bp+12];要输出的行
-    int 21h
-Inquire_check_ret:
     mov sp,bp
     pop bp
-    ret 10
+    ret 4
 
 
 ;文件操作
@@ -1076,31 +1110,6 @@ set_append_mode:;将文件指针移动到末尾,即追加模式
     xor dx,dx
     int 21h
     ret
-
-get_buffer_length_to_cr:;读取缓冲区字符的长度到CR截止
-    push bp
-    mov bp,sp
-    push cx
-    push bx
-    xor cx,cx
-    xor bx,bx
-    mov si,ss:[bp+6]
-buffer_length_loop:
-    mov bl,byte ptr ds:[si];获取输入的每一个字符
-    inc cx;cx保存buffer的长度
-    cmp bl,13;CR 回车符
-    je save_buffer_length
-    inc si
-    jmp buffer_length_loop
-save_buffer_length:
-    mov si,ss:[bp+4]
-    mov [si],cx
-
-    pop bx
-    pop cx
-    mov sp,bp
-    pop bp
-    ret 4
 
 code ends
 end main
