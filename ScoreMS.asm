@@ -20,6 +20,7 @@ Inquire_fail            db 'Inquire fail,please try again!!!',13,10,'$'
 Score_Sample            db '    id    |    name    |  16x normal score  |  bigwork score  |  final score',13,10,'$'
 input_hint              db 'Please input students profile: ',13,10,'$'
 inquire_input_hint      db 'Please input keywords: ','$'
+press_enter_hint        db 'Please press enter to show next page',13,10,13,10,'$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
 max_min_avg_score       db 'max:          min:          avg:          ',13,10,'$'
 score_segment1          db '90-100:          ',13,10,'$'
@@ -289,7 +290,7 @@ read_score_from_file_loop:
     lea dx,Profile_input+2
     int 21h
     inc cx
-
+    call press_enter
     call get_final_score_posi
     call convert_final_score_to_int
     call get_max_final_score
@@ -503,8 +504,7 @@ descending_sort_loop2_check:
 
 sort_print:
     call open_file
-    lea si,total_number
-    mov cx,word ptr ds:[si]
+    mov cx,1
     lea bx,final_score_sort
 sort_print_loop:
     mov ax,word ptr ds:[bx]
@@ -514,8 +514,12 @@ sort_print_loop:
     lea dx,Profile_input+2
     mov ah,9
     int 21h
+    call press_enter
     add bx,4
-    loop sort_print_loop
+    inc cx
+    lea si,total_number
+    cmp cx,word ptr ds:[si]
+    jne sort_print_loop
     call close_file
     ret
 
@@ -608,6 +612,36 @@ print_segment:
     ret
 
 ;-----
+
+press_enter:
+    push ax
+    push cx
+    push dx
+    xor dx,dx
+    mov ax,cx
+    mov cx,7
+    div cx
+    cmp dx,0
+    je print_press_enter_hint
+    jne press_enter_finish
+print_press_enter_hint:
+    xor ax,ax
+    mov ah,9
+    lea dx,press_enter_hint
+    int 21h
+press_enter_next_page:
+    xor ax,ax
+    mov ah,0
+    int 16h
+    cmp al,13
+    je press_enter_finish
+    jne press_enter_next_page
+press_enter_finish:
+    pop dx
+    pop cx
+    pop ax
+    ret
+
 
 print_max_min_avg_score:
     lea di,max_final_score_integer
