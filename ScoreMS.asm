@@ -20,7 +20,7 @@ Inquire_fail            db 'Inquire fail,please try again!!!',13,10,'$'
 Score_Sample            db '    id    |    name    |  16x normal score  |  bigwork score  |  final score',13,10,'$'
 input_hint              db 'Please input students profile: ',13,10,'$'
 inquire_input_hint      db 'Please input keywords: ','$'
-press_enter_hint        db 'Please press enter to show next page',13,10,13,10,'$'
+press_enter_hint        db 'Please press enter to show more information',13,10,13,10,'$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
 max_min_avg_score       db 'max:          min:          avg:          ',13,10,'$'
 score_segment1          db '90-100:          ',13,10,'$'
@@ -504,7 +504,7 @@ descending_sort_loop2_check:
 
 sort_print:
     call open_file
-    mov cx,1
+    mov cx,0
     lea bx,final_score_sort
 sort_print_loop:
     mov ax,word ptr ds:[bx]
@@ -514,9 +514,9 @@ sort_print_loop:
     lea dx,Profile_input+2
     mov ah,9
     int 21h
+    inc cx
     call press_enter
     add bx,4
-    inc cx
     lea si,total_number
     cmp cx,word ptr ds:[si]
     jne sort_print_loop
