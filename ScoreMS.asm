@@ -3,11 +3,11 @@ data segment
 Main_menu               db 13,10
                         db 'Score Management System',13,10;主菜单,13,10 -> CRLF
                         db '1 -> Input',13,10;获取输入,并自动计算总成绩
-                        db '2 -> Print All Score',13,10;打印所有成绩(默认根据输入顺序)
+                        db '2 -> Print All Score',13,10;自动计算平均分,最高分,最低分,并打印所有成绩(默认根据输入顺序)
                         db '3 -> Inquire',13,10;查询
                         db '4 -> Ascending Sort & Print',13,10;将总成绩升序排列并打印
                         db '5 -> Descending Sort & Print',13,10;将总成绩降序排列并打印
-                        db '6 -> Segmentation',13,10;自动计算平均分,最高分,最低分,并进行分数段统计
+                        db '6 -> Segmentation',13,10;进行分数段统计
                         db '7 -> Quit',13,10;退出
                         db 'Please input your choice without enter: ','$'
 Inquire_menu            db 13,10
@@ -19,6 +19,7 @@ CRLF                    db 13,10,'$'
 Inquire_fail            db 'Inquire fail,please try again!!!',13,10,'$'
 Score_Sample            db '    id    |    name    |  16x normal score  |  bigwork score  |  final score',13,10,'$'
 input_hint              db 'Please input students profile: ',13,10,'$'
+input_sample            db 'Sample: 2019052xxx zhangsan 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17',13,10,'$'
 inquire_input_hint      db 'Please input keywords: ','$'
 press_enter_hint        db 'Please press enter to show more information',13,10,13,10,'$'
 error                   db 13,10,'Your choice error,please input again',13,10,'$'
@@ -201,6 +202,11 @@ get_profile_input:;获取信息输入
     xor ax,ax
     mov ah,9
     lea dx,input_hint
+    int 21h
+
+    xor ax,ax
+    mov ah,9
+    lea dx,input_sample
     int 21h
 
     xor ax,ax
