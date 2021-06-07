@@ -1,4 +1,4 @@
 *.exe
 *.obj
-*test*
+test*
 STUDENTS.TXT

@@ -18,6 +18,7 @@ main:
     mov ax, 4c00h
     int 21h
 show_str:
+
     push dx
     push cx;保存相关寄存器
 
